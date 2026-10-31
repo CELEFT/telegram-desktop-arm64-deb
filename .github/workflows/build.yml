@@ -6,8 +6,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Snap version (empty: current stable)"
+        description: "Snap version (empty: current channel latest)"
         required: false
+      channel:
+        description: "Snap channel (stable, candidate, edge)"
+        required: true
+        default: "stable"
+        type: choice
+        options:
+          - stable
+          - candidate
+          - edge
   push:
     branches: [main]
 
@@ -27,6 +36,7 @@ jobs:
       CONTAINER_ENGINE: docker
       DEB_MAINTAINER: "${{ github.repository_owner }} <${{ github.repository_owner }}@users.noreply.github.com>"
       VERSION_INPUT: ${{ inputs.version }}
+      CHANNEL_INPUT: ${{ inputs.channel || 'stable' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,11 +48,12 @@ jobs:
       - name: Check whether a build is needed
         id: check
         run: |
-          version=$(./build.sh ${VERSION_INPUT:+--version "$VERSION_INPUT"} --print-version)
+          # 增加了 --channel 参数
+          version=$(./build.sh ${VERSION_INPUT:+--version "$VERSION_INPUT"} --channel "$CHANNEL_INPUT" --print-version)
           echo "version=$version" >>"$GITHUB_OUTPUT"
           asset="telegram-desktop-arm64_${version}_arm64.deb"
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            echo "Manual run: building $version"
+            echo "Manual run: building $version from $CHANNEL_INPUT channel"
             echo "build=true" >>"$GITHUB_OUTPUT"
           elif gh release view repo --json assets --jq '.assets[].name' 2>/dev/null | grep -qxF "$asset"; then
             echo "$version is already published"
@@ -54,7 +65,8 @@ jobs:
 
       - name: Build
         if: steps.check.outputs.build == 'true'
-        run: ./build.sh ${VERSION_INPUT:+--version "$VERSION_INPUT"}
+        # 增加了 --channel 参数
+        run: ./build.sh ${VERSION_INPUT:+--version "$VERSION_INPUT"} --channel "$CHANNEL_INPUT"
 
       - name: Smoke test
         if: steps.check.outputs.build == 'true'
